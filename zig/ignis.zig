@@ -1,11 +1,13 @@
 const std = @import("std");
 
-const c = @cImport("#include \"../ignis.h\"");
+
+const c = @cImport("#define IGNIS_IMPLEMENTATION#include \"../ignis.h\"");
 
 const CallConv = switch (std.builtin.os.tag) {
     .windows => .Stdcall,
     else => .C,
 };
+
 
 const LibHandle = if (std.builtin.os.tag == .windows) std.os.windows.HMODULE else ?*anyopaque;
 
