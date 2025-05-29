@@ -14,8 +14,34 @@
   #define IGNIS_CALL
 #endif
 
+// --- Version Macros ---
+#define IGNIS_VERSION_MAJOR 1
+#define IGNIS_VERSION_MINOR 0
+#define IGNIS_VERSION_PATCH 0
+
+#define IGNIS_STR_HELPER(x) #x
+#define IGNIS_STR(x) IGNIS_STR_HELPER(x)
+
+#define IGNIS_VERSION_STRING \
+    IGNIS_STR(IGNIS_VERSION_MAJOR) "." IGNIS_STR(IGNIS_VERSION_MINOR) "." IGNIS_STR(IGNIS_VERSION_PATCH)
+
 namespace Ignis {
 
+struct Version {
+    int major;
+    int minor;
+    int patch;
+};
+
+inline Version get_version() {
+    return { IGNIS_VERSION_MAJOR, IGNIS_VERSION_MINOR, IGNIS_VERSION_PATCH };
+}
+
+inline const char* get_version_string() {
+    return IGNIS_VERSION_STRING;
+}
+
+// --- Function registry ---
 inline std::unordered_map<std::string, void*> function_registry;
 
 inline void register_function(const char* name, void* ptr) {
@@ -24,10 +50,10 @@ inline void register_function(const char* name, void* ptr) {
 
 inline void* get_function(const char* name) {
     auto it = function_registry.find(name);
-    if (it != function_registry.end()) return it->second;
-    return nullptr;
+    return (it != function_registry.end()) ? it->second : nullptr;
 }
 
+// --- Dynamic loading ---
 inline LibHandle exe_handle = nullptr;
 
 inline void init() {
@@ -41,10 +67,26 @@ inline void init() {
 
 inline LibHandle load_mod(const char* path) {
 #ifdef _WIN32
-    return LoadLibraryA(path);
+    LibHandle lib = LoadLibraryA(path);
 #else
-    return dlopen(path, RTLD_NOW);
+    LibHandle lib = dlopen(path, RTLD_NOW);
 #endif
+    if (!lib) return nullptr;
+
+    using VersionFunc = Version(*)();
+    VersionFunc mod_ver_func = (VersionFunc)get_symbol(lib, "ignis_module_version");
+    if (!mod_ver_func) {
+        close_mod(lib);
+        return nullptr;
+    }
+
+    Version mod_ver = mod_ver_func();
+    if (mod_ver.major != IGNIS_VERSION_MAJOR) {
+        close_mod(lib);
+        return nullptr;
+    }
+
+    return lib;
 }
 
 inline void* get_symbol(LibHandle lib, const char* name) {
@@ -63,7 +105,15 @@ inline void close_mod(LibHandle lib) {
 #endif
 }
 
+// --- Auto-export version function once ---
+#ifndef IGNIS_VERSION_FUNCTION_DEFINED
+#define IGNIS_VERSION_FUNCTION_DEFINED
+extern "C" Version IGNIS_CALL ignis_module_version() {
+    return get_version();
+}
+#endif
 
+// --- Export Macro ---
 #define IGNIS_EXPORT(ret, name, ...) \
     extern "C" ret IGNIS_CALL name(__VA_ARGS__); \
     struct __ignis_reg_##name { \
