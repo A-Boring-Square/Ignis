@@ -1,72 +1,59 @@
 #!/bin/sh
+set -e
 
-# Default args
-PLATFORM="${1:-x64}"
-CONFIG="${2:-Release}"
+# Default values
+ARCH="${1:-x86_64}"
+MODE="${2:-release}"
+BUILD_DIR="build/$ARCH/$MODE"
+SRC="static_lib.c"
+OUT_LIB="$BUILD_DIR/libignis.a"
 
-# Select compiler
-if command -v clang >/dev/null 2>&1; then
-    CC=clang
-    AR=llvm-ar
+# Create build directory
+mkdir -p "$BUILD_DIR"
+
+# Detect host architecture
+HOST_ARCH=$(uname -m)
+USE_CROSS=0
+
+# Normalize ARCH and HOST_ARCH
+norm_arch() {
+    case "$1" in
+        x86_64|amd64) echo x86_64 ;;
+        i386|i686) echo x86 ;;
+        armv7l|arm) echo arm32 ;;
+        aarch64) echo arm64 ;;
+        *) echo "$1" ;;
+    esac
+}
+ARCH=$(norm_arch "$ARCH")
+HOST_ARCH=$(norm_arch "$HOST_ARCH")
+
+# Determine if cross-compilation is needed
+[ "$ARCH" != "$HOST_ARCH" ] && USE_CROSS=1
+
+# Set compiler
+if [ "$USE_CROSS" -eq 1 ]; then
+    case "$ARCH" in
+        x86)      CC=i686-linux-gnu-gcc ;;
+        x86_64)   CC=x86_64-linux-gnu-gcc ;;
+        arm32)    CC=arm-linux-gnueabihf-gcc ;;
+        arm64)    CC=aarch64-linux-gnu-gcc ;;
+        *) echo "Unknown architecture: $ARCH" && exit 1 ;;
+    esac
 else
     CC=gcc
-    AR=ar
 fi
 
 # Set flags
-CFLAGS="-Wall -Wextra -std=c11"
-LDFLAGS=""
-OUTDIR="build/$PLATFORM/$CONFIG"
+CFLAGS="-Wall -Wextra -std=c99 -I. -c $SRC -o $BUILD_DIR/static_lib.o"
+LFLAGS="-r -o $OUT_LIB"
 
-case "$CONFIG" in
-    Debug)
-        CFLAGS="$CFLAGS -g -O0"
-        ;;
-    Release)
-        CFLAGS="$CFLAGS -O2"
-        ;;
-    *)
-        echo "Unsupported config: $CONFIG"
-        exit 1
-        ;;
-esac
-
-# Platform-specific flags
-case "$PLATFORM" in
-    x86)
-        CFLAGS="$CFLAGS -m32"
-        ;;
-    x64)
-        CFLAGS="$CFLAGS -m64"
-        ;;
-    arm32)
-        CC=arm-linux-gnueabihf-gcc
-        AR=arm-linux-gnueabihf-ar
-        ;;
-    arm64)
-        CC=aarch64-linux-gnu-gcc
-        AR=aarch64-linux-gnu-ar
-        ;;
-    *)
-        echo "Unsupported platform: $PLATFORM"
-        exit 1
-        ;;
-esac
-
-# Check if cross-compiler exists
-if ! command -v "$CC" >/dev/null 2>&1; then
-    echo "Compiler $CC not found."
-    exit 1
-fi
-
-# Create output dir
-mkdir -p "$OUTDIR"
+[ "$MODE" = "release" ] && CFLAGS="$CFLAGS -O2"
+[ "$MODE" = "debug" ] && CFLAGS="$CFLAGS -g -O0"
 
 # Build
-OBJ="$OUTDIR/static_lib.o"
-LIB="$OUTDIR/libignis.a"
+echo "Compiling with $CC for $ARCH ($MODE)"
+$CC $CFLAGS
+ar $LFLAGS "$BUILD_DIR/static_lib.o"
 
-$CC -c $CFLAGS static_lib.c -o "$OBJ" || { echo "Compilation failed."; exit 1; }
-$AR rcs "$LIB" "$OBJ" || { echo "Library creation failed."; exit 1; }
-
-echo "Build successful: $LIB"
+echo "Built $OUT_LIB"
