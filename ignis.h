@@ -1,9 +1,4 @@
 #pragma once
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <string.h>
 
 #ifdef _WIN32
@@ -16,14 +11,32 @@ extern "C" {
   #define IGNIS_CALL
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void ignis_init(void);
+void ignis_register_function(const char* name, void* ptr);
+void* ignis_get_function(const char* name);
+
+Ignis_LibHandle ignis_load_mod(const char* path);
+void* ignis_get_symbol(Ignis_LibHandle lib, const char* name);
+void ignis_close_mod(Ignis_LibHandle lib);
+
+#define IGNIS_EXPORT(ret, name, ...) \
+    ret IGNIS_CALL name(__VA_ARGS__); \
+    static void* _ignis_##name##_ptr = (ignis_register_function(#name, (void*)&name), (void*)1); \
+    ret IGNIS_CALL name(__VA_ARGS__)
+
+#ifdef IGNIS_IMPLEMENTATION
+
 // --- Registry ---
 #define IGNIS_MAX_FUNCTIONS 256
-
 static void* ignis_function_ptrs[IGNIS_MAX_FUNCTIONS];
 static const char* ignis_function_names[IGNIS_MAX_FUNCTIONS];
 static int ignis_function_count = 0;
 
-static void ignis_register_function(const char* name, void* ptr) {
+void ignis_register_function(const char* name, void* ptr) {
     for (int i = 0; i < ignis_function_count; ++i) {
         if (strcmp(ignis_function_names[i], name) == 0) {
             ignis_function_ptrs[i] = ptr;
@@ -37,7 +50,7 @@ static void ignis_register_function(const char* name, void* ptr) {
     }
 }
 
-static void* ignis_get_function(const char* name) {
+void* ignis_get_function(const char* name) {
     for (int i = 0; i < ignis_function_count; ++i) {
         if (strcmp(ignis_function_names[i], name) == 0) {
             return ignis_function_ptrs[i];
@@ -50,7 +63,7 @@ static void* ignis_get_function(const char* name) {
 
 static Ignis_LibHandle ignis_exe_handle = 0;
 
-static void ignis_init(void) {
+void ignis_init(void) {
     ignis_function_count = 0;
 #ifdef _WIN32
     ignis_exe_handle = GetModuleHandleA(0);
@@ -59,7 +72,7 @@ static void ignis_init(void) {
 #endif
 }
 
-static Ignis_LibHandle ignis_load_mod(const char* path) {
+Ignis_LibHandle ignis_load_mod(const char* path) {
 #ifdef _WIN32
     return LoadLibraryA(path);
 #else
@@ -67,7 +80,7 @@ static Ignis_LibHandle ignis_load_mod(const char* path) {
 #endif
 }
 
-static void* ignis_get_symbol(Ignis_LibHandle lib, const char* name) {
+void* ignis_get_symbol(Ignis_LibHandle lib, const char* name) {
 #ifdef _WIN32
     return (void*)GetProcAddress(lib, name);
 #else
@@ -75,7 +88,7 @@ static void* ignis_get_symbol(Ignis_LibHandle lib, const char* name) {
 #endif
 }
 
-static void ignis_close_mod(Ignis_LibHandle lib) {
+void ignis_close_mod(Ignis_LibHandle lib) {
 #ifdef _WIN32
     if (lib) FreeLibrary(lib);
 #else
@@ -83,11 +96,7 @@ static void ignis_close_mod(Ignis_LibHandle lib) {
 #endif
 }
 
-// --- Export helper (C only) ---
-#define IGNIS_EXPORT(ret, name, ...) \
-    ret IGNIS_CALL name(__VA_ARGS__); \
-    static void* _ignis_##name##_ptr = (ignis_register_function(#name, (void*)&name), (void*)1); \
-    ret IGNIS_CALL name(__VA_ARGS__)
+#endif // IGNIS_IMPLEMENTATION
 
 #ifdef __cplusplus
 }
